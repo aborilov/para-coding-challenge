@@ -1,0 +1,111 @@
+version: '3.7'
+
+services:
+  kong-import:
+    image: kong
+    command: kong config db_import /usr/local/kong/declarative/kong.yml 
+    networks:
+      - kong-net
+    volumes:
+      - ./kong.yml:/usr/local/kong/declarative/kong.yml
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: "postgres"
+      KONG_PG_HOST: "kong-database"   
+      KONG_CASSANDRA_CONTACT_POINTS: "kong-database"   
+    restart: on-failure
+  kong-bootstrap:
+    image: kong
+    command: kong migrations bootstrap
+    networks:
+      - kong-net
+    volumes:
+      - ./kong.yml:/usr/local/kong/declarative/kong.yml
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: "postgres"
+      KONG_PG_HOST: "kong-database"   
+      KONG_CASSANDRA_CONTACT_POINTS: "kong-database"   
+    restart: on-failure
+
+  kong-migrate:
+    image: kong
+    command: kong migrations up
+    networks:
+      - kong-net
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: "postgres"
+      KONG_PG_HOST: "kong-database"   
+      KONG_CASSANDRA_CONTACT_POINTS: "kong-database"   
+    restart: on-failure
+
+  kong:
+    image: kong
+    networks:
+      - kong-net
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: "postgres"
+      KONG_PG_HOST: "kong-database"   
+      KONG_CASSANDRA_CONTACT_POINTS: "kong-database"   
+      KONG_PROXY_ACCESS_LOG: "/dev/stdout"
+      KONG_ADMIN_ACCESS_LOG: "/dev/stdout"
+      KONG_PROXY_ERROR_LOG: "/dev/stderr"
+      KONG_ADMIN_ERROR_LOG: "/dev/stderr"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001, 0.0.0.0:8444 ssl"
+    ports:
+      - "8000:8000/tcp"
+      - "8443:8443/tcp"
+    restart: on-failure
+
+  kong-database:
+    image: postgres
+    environment:
+      POSTGRES_USER: "kong"
+      POSTGRES_DB: "kong"
+    networks:
+      - kong-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kong"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: on-failure
+
+  api-database:
+    image: postgres
+    environment:
+      POSTGRES_USER: "server"
+      POSTGRES_DB: "server"
+    networks:
+      - kong-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kong"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    volumes:
+      - ./bootstrap.sql:/docker-entrypoint-initdb.d/bootstrap.sql
+    restart: on-failure
+
+  api:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    environment:
+      CONSUMER: "my-user"
+      KONG: "kong:8001"
+      PG_URI: "postgres://server:@api-database:5432/server?sslmode=disable"
+    depends_on:
+      - kong-database
+    restart: on-failure
+    networks:
+      - kong-net
+
+networks:
+  kong-net:

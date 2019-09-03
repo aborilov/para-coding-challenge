@@ -1,0 +1,21 @@
+_format_version: "1.1"
+
+services:
+- name: my-service
+  url: http://api
+  routes:
+  - name: login
+    strip_path: false
+    paths:
+    - /auth
+    - /login
+  - name: api
+    plugins:
+    - name: jwt
+    paths:
+    - /
+
+consumers:
+  - username: my-user
+jwt_secrets:
+  - consumer: my-user
